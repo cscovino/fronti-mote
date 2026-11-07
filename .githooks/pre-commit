@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Format check only for staged C/C++, then the host tests.
+staged=$(git diff --cached --name-only --diff-filter=ACMR -- \
+  '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp')
+if [ -n "$staged" ]; then
+  fmt=$(command -v clang-format || command -v clang-format-18 || true)
+  if [ -z "$fmt" ]; then
+    echo "pre-commit: clang-format not found (sudo apt install clang-format-18)" >&2
+    exit 1
+  fi
+  major=$("$fmt" --version | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+  if [ "$major" -lt 18 ]; then
+    echo "pre-commit: clang-format $major is too old, need 18+" >&2
+    exit 1
+  fi
+  while IFS= read -r file; do
+    "$fmt" --dry-run --Werror "$file"
+  done <<< "$staged"
+fi
+
+pio test -e native

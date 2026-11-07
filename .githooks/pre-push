@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Tests already ran in pre-commit; this keeps unbuilt firmware off origin.
+pio run

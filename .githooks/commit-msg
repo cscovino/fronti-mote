@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Header length is counted in characters, so the caller's locale must not decide.
+export LC_ALL=C.UTF-8
+
+# Strip VS-16: emoji keyboards append it and grep mishandles the escape in ERE.
+msg=$(head -n 1 "$1" | tr -d '\357\270\217')
+
+case "$msg" in Merge* | Revert* | 'fixup!*' | 'squash!*') exit 0 ;; esac
+
+emoji='✨|🐛|📝|🎨|🔧|🚀|💡|🔥|🌱|🔒|👷|🔖|🚨|🎯|🚑|💬|📦|🔄|🚧'
+types='feat|fix|refactor|perf|test|docs|style|chore|build|ci'
+if ! printf '%s' "$msg" | grep -qE "^($emoji) ($types)(\([a-z0-9-]+\))?!?: .+$"; then
+  cat >&2 <<'EOF'
+commit-msg: expected "<emoji> type(scope): subject"
+  e.g. 🐛 fix(parser): handle CRLF on the serial console
+  types: feat fix refactor perf test docs style chore build ci
+EOF
+  exit 1
+fi
+
+if [ "${#msg}" -gt 72 ]; then
+  echo "commit-msg: header is ${#msg} chars, max 72" >&2
+  exit 1
+fi
