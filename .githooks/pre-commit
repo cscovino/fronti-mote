@@ -16,7 +16,7 @@ if [ -n "$staged" ]; then
     exit 1
   fi
   while IFS= read -r file; do
-    "$fmt" --dry-run --Werror "$file"
+    git show ":$file" | "$fmt" --dry-run --Werror --assume-filename="$file" -
   done <<< "$staged"
 fi
 

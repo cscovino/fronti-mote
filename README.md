@@ -30,12 +30,93 @@ pio run -t upload    # flash over USB
 pio device monitor   # 115200 baud, native USB CDC
 ```
 
-`src/main.cpp` starts with:
+The firmware gives you:
 
+- a 1.54" e-paper bear face with four expressions,
+- a rotary encoder that changes the expression and plays a note for each detent
+  on a passive buzzer,
 - a non-blocking blink of the onboard LED (`GPIO21`, active LOW),
 - a heartbeat + chip/heap report every 2 seconds,
-- a tiny echoing serial console: type `on`, `off`, `status`, or `help`. The
-  `on`/`off` commands stop the automatic blink and hold the requested state.
+- a tiny echoing serial console: type `on`, `off`, `face`, `buzz`, `status`,
+  or `help`. The `on`/`off` commands stop the automatic blink and hold the
+  requested state; `off` also silences the buzzer.
+
+## Expressions
+
+| Face | Eyes | Mouth | Note |
+| --- | --- | --- | --- |
+| Sleepy | closed lines | flat line | 262 Hz |
+| Calm | dot pupils | small smile | 330 Hz |
+| Happy | `^ ^` arcs | open smile | 392 Hz |
+| Surprised | big rings | small `o` | 523 Hz |
+
+Turning the encoder wraps through the four faces in both directions. The panel
+refreshes 400 ms after the last detent, so a quick spin produces one update.
+
+## E-paper display
+
+The panel is a Waveshare 1.54" V2 module (200×200, SSD1681, 3.3 V only).
+
+| E-paper | XIAO pin | GPIO |
+| --- | --- | --- |
+| VCC | 3V3 | — |
+| GND | GND | — |
+| DIN (SDI) | D10 | 9 |
+| CLK (SCK) | D8 | 7 |
+| CS | D0 | 1 |
+| DC | D1 | 2 |
+| RST | D2 | 3 |
+| BUSY | D9 | 8 |
+
+`D9` is also the SPI MISO pin, but the display only writes, so the BUSY input is
+free to use it.
+
+A full refresh flashes the panel for about 2.6 s. The firmware instead loads
+Waveshare's partial waveform, so a face change takes roughly half a second.
+After ten partial updates it does a full refresh to clear ghosting. The refresh
+runs in a FreeRTOS task, so the encoder and buzzer never wait for the panel.
+
+## Encoder and buzzer
+
+| Signal | XIAO pin | Notes |
+| --- | --- | --- |
+| Encoder A (CLK) | D4 (GPIO5) | `INPUT_PULLUP` in firmware |
+| Encoder B (DT) | D5 (GPIO6) | `INPUT_PULLUP` in firmware |
+| Encoder common | GND | |
+| Encoder + | 3V3 | only if the module has its own pull-ups |
+| Buzzer S (+) | 3V3 | passive buzzer |
+| Buzzer (−) | BC547B collector | 1N4007 across the buzzer, cathode to 3V3 |
+| BC547B base | D3 (GPIO4) via 1 kΩ | |
+| BC547B emitter | GND | |
+
+The buzzer is passive, so the ESP32 generates the tone with LEDC PWM. D4/D5 are
+the I²C pins, so they are taken if you later add an I²C device.
+
+### Breadboard sketch
+
+```
+XIAO ESP32S3          e-paper 1.54" V2
+3V3  ──────────────── VCC
+GND  ──────────────── GND
+D10  ──────────────── DIN
+D8   ──────────────── CLK
+D0   ──────────────── CS
+D1   ──────────────── DC
+D2   ──────────────── RST
+D9   ──────────────── BUSY
+
+3V3 ──┬─ encoder +          (only if the module has pull-ups)
+      ├─ buzzer +
+      └─ 1N4007 cathode
+GND ──┬─ encoder C
+      └─ Q1 emitter
+D4  ──── encoder A (CLK)
+D5  ──── encoder B (DT)
+D3 ──[1k]── Q1 base          Q1 = BC547B, flat side up: C-B-E
+Q1 collector ── buzzer − / 1N4007 anode
+```
+
+Only the 3V3 rail is used; nothing goes to 5V on either module.
 
 If upload fails, put the board in bootloader mode: hold **BOOT**, tap **RESET**,
 release **BOOT**, then upload again.
@@ -47,13 +128,23 @@ the first `pio run`. If they ever go missing:
 
 ## Project layout
 
-- `src/main.cpp` — Arduino entry point: blink, heartbeat, serial console
+- `src/main.cpp` — Arduino entry point: `setup()`/`loop()` wiring only
+- `src/pal.cpp` — LED, buzzer, encoder, expression state and settle timer
+- `src/console.cpp` — serial console and heartbeat
+- `src/display.cpp` — e-paper init, face drawing, background refresh task
+- `include/expressions.h` — face order, names and notes, shared with the tests
+- `include/display.h` — display start and face queue
+- `include/pal.h` — pal hardware API
+- `include/console.h` — serial console API
 - `include/line_reader.h` — pure C++ line parser shared with the host tests
+- `include/rotary_encoder.h` — pure C++ quadrature decoder for the host tests
+- `test/test_expressions/` — Unity tests for face wrapping and notes
 - `test/test_line_reader/` — Unity tests for the parser
+- `test/test_rotary_encoder/` — Unity tests for the encoder decoder
 
 ## Tests
 
-The serial line parser runs on the host:
+The face order, the serial line parser and the encoder decoder run on the host:
 
 ```bash
 pio test -e native
@@ -61,6 +152,13 @@ pio test -e native
 
 The board environment ignores tests (`test_ignore = *`), so nothing is flashed
 during a test run.
+
+The panel itself has no automated test. After a flash, check:
+
+- boot shows the Calm face and the serial banner,
+- turning the knob updates the eyes and mouth without a full-screen flash,
+- the eleventh face change flashes the whole panel to clear ghosting,
+- the next face change is fast again, so the factory waveform was restored.
 
 ## License
 

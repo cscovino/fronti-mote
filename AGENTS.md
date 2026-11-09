@@ -24,10 +24,21 @@ If upload fails: hold BOOT, tap RESET, release BOOT, upload again.
 
 ## Layout
 
-- `src/main.cpp` — Arduino entry point: blink (`GPIO21`, active LOW),
-  heartbeat, serial console (`on|off|status|help`)
+- `src/main.cpp` — Arduino entry point: `setup()`/`loop()` wiring only
+- `src/pal.cpp` — LED, buzzer, encoder, expression state and settle timer
+- `src/console.cpp` — serial console (`on|off|face|buzz|status|help`) and
+  heartbeat
+- `src/display.cpp` — GxEPD2 panel, vendor partial LUT, face drawing, display
+  task
+- `include/expressions.h` — face order, names and notes, host-testable
+- `include/display.h` — display start and face queue
+- `include/pal.h` — pal hardware API
+- `include/console.h` — serial console API
 - `include/line_reader.h` — pure C++ line parser, host-testable
+- `include/rotary_encoder.h` — pure C++ quadrature decoder, host-testable
+- `test/test_expressions/` — Unity tests for face wrapping and notes
 - `test/test_line_reader/` — Unity tests for `include/` logic
+- `test/test_rotary_encoder/` — Unity tests for the encoder decoder
 
 ## Coding rules
 
