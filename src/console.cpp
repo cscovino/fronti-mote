@@ -61,8 +61,9 @@ void handleCommand(const char* cmd) {
 }
 
 // Non-blocking serial console: echoes input and accepts CR, LF or CRLF.
+// A bounded drain keeps a pasted block from starving the rest of loop().
 void pollSerial() {
-  while (Serial.available() > 0) {
+  for (uint8_t i = 0; i < 32 && Serial.available() > 0; ++i) {
     const char c = static_cast<char>(Serial.read());
 
     if (c == '\b' || c == 0x7F) {
@@ -70,6 +71,10 @@ void pollSerial() {
         Serial.print("\b \b");
       }
       continue;
+    }
+
+    if (static_cast<unsigned char>(c) < 0x20 && c != '\r' && c != '\n') {
+      continue;  // ESC sequences and control bytes are never command text
     }
 
     const LineEvent event = reader.feed(c);

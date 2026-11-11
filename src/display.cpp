@@ -6,6 +6,11 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+#include <iterator>
+
+#include "polygon.h"
+#include "refresh_gate.h"
+
 namespace {
 
 constexpr uint8_t kCsPin = D0;    // GPIO1
@@ -13,143 +18,73 @@ constexpr uint8_t kDcPin = D1;    // GPIO2
 constexpr uint8_t kRstPin = D2;   // GPIO3
 constexpr uint8_t kBusyPin = D9;  // GPIO8, SPI MISO is unused
 
-// Waveshare 1.54" V2 partial waveform from Espressif's esp_lcd_ssd1681 demo.
-// 153 bytes go to 0x32; the last six are the 0x3F/0x03/0x04/0x2C registers.
-const uint8_t kFastLut[159] = {
-    0x80, 0x48, 0x40, 0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x40,
-    0x48, 0x80, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x80, 0x48,
-    0x40, 0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x40, 0x48, 0x80,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0a, 0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0,  0x0, 0x0, 0x0,  0x0,  0x0,  0x0,
-    0x0,  0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x0, 0x0, 0x0,  0x22, 0x17, 0x41,
-    0x0,  0x32, 0x20,
-};
-
-// Replaces the OTP differential waveform with the vendor partial one, so face
-// changes refresh in ~0.5 s instead of flashing the whole panel for ~2.6 s.
-class WavesharePanel : public GxEPD2_154_D67 {
- public:
-  using GxEPD2_154_D67::GxEPD2_154_D67;
-
-  void refresh(bool partial_update_mode) override {
-    if (!partial_update_mode && fastLutLoaded_) {
-      // Reload the factory waveform our partial LUT replaced (esp_lcd_ssd1681
-      // does the same when it switches the panel back on).
-      _writeCommand(0x22);
-      _writeData(0xB1);
-      _writeCommand(0x3F);
-      _writeData(0x07);
-      _writeCommand(0x20);
-      _waitWhileBusy("_loadOtpLut", 1000);
-      _writeCommand(0x3C);
-      _writeData(0x05);
-      fastLutLoaded_ = false;
-    }
-    GxEPD2_154_D67::refresh(partial_update_mode);
-  }
-
-  void refresh(int16_t x, int16_t y, int16_t w, int16_t h) override {
-    if (_initial_refresh) {
-      GxEPD2_154_D67::refresh(x, y, w, h);
-      return;
-    }
-    int16_t w1 = x < 0 ? w + x : w;
-    int16_t h1 = y < 0 ? h + y : h;
-    int16_t x1 = x < 0 ? 0 : x;
-    int16_t y1 = y < 0 ? 0 : y;
-    w1 = x1 + w1 < int16_t(WIDTH) ? w1 : int16_t(WIDTH) - x1;
-    h1 = y1 + h1 < int16_t(HEIGHT) ? h1 : int16_t(HEIGHT) - y1;
-    if (w1 <= 0 || h1 <= 0) return;
-    w1 += x1 % 8;
-    if (w1 % 8 > 0) w1 += 8 - w1 % 8;
-    x1 -= x1 % 8;
-    setRamArea(x1, y1, w1, h1);
-
-    if (!fastLutLoaded_) {
-      loadFastLut();
-      fastLutLoaded_ = true;
-    }
-    _writeCommand(0x22);
-    _writeData(0xC0);  // power on
-    _writeCommand(0x20);
-    _waitWhileBusy("_PowerOn", 1000);
-    _writeCommand(0x22);
-    _writeData(0xCF);  // display using the loaded LUT
-    _writeCommand(0x20);
-    _waitWhileBusy("_Update_Part", 1000);
-    _power_is_on = false;  // 0xCF already disabled analog and the oscillator
-  }
-
- private:
-  // The LUT registers keep their bytes until the OTP reload or a reset.
-  bool fastLutLoaded_ = false;
-
-  void loadFastLut() {
-    _writeCommand(0x32);
-    for (uint8_t i = 0; i < 153; ++i) _writeData(kFastLut[i]);
-    _writeCommand(0x3F);
-    _writeData(kFastLut[153]);
-    _writeCommand(0x03);
-    _writeData(kFastLut[154]);
-    _writeCommand(0x04);
-    _writeData(kFastLut[155]);
-    _writeData(kFastLut[156]);
-    _writeData(kFastLut[157]);
-    _writeCommand(0x2C);
-    _writeData(kFastLut[158]);
-    // Waveshare writes these option bytes right before the partial update.
-    _writeCommand(0x37);
-    const uint8_t kOption[10] = {0x00, 0x00, 0x00, 0x00, 0x00,
-                                 0x40, 0x00, 0x00, 0x00, 0x00};
-    _writeData(kOption, sizeof(kOption));
-    _writeCommand(0x3C);  // border waveform used by partial refresh
-    _writeData(0x80);
-    _waitWhileBusy("_loadFastLut", 1000);
-  }
-
-  // GxEPD2_154_D67::_setPartialRamArea is private; this is the same sequence.
-  void setRamArea(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
-    _writeCommand(0x11);
-    _writeData(0x03);
-    _writeCommand(0x44);
-    _writeData(x / 8);
-    _writeData((x + w - 1) / 8);
-    _writeCommand(0x45);
-    _writeData(y % 256);
-    _writeData(y / 256);
-    _writeData((y + h - 1) % 256);
-    _writeData((y + h - 1) / 256);
-    _writeCommand(0x4E);
-    _writeData(x / 8);
-    _writeCommand(0x4F);
-    _writeData(y % 256);
-    _writeData(y / 256);
-  }
-};
-
-GxEPD2_BW<WavesharePanel, 200> display(WavesharePanel(kCsPin, kDcPin, kRstPin,
-                                                      kBusyPin));
+// The bear's panel is a 1.54" black/white e-paper (GDEH0154D67-class,
+// 200x200, SSD1681). A face redraw fills the whole framebuffer anyway, so
+// every update is the flashing full-refresh waveform: the gap and the skip of
+// unchanged faces in refresh_gate.h are the only ways to cut how often it
+// flashes.
+GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(
+    GxEPD2_154_D67(kCsPin, kDcPin, kRstPin, kBusyPin));
 
 QueueHandle_t faceQueue = nullptr;
 
-constexpr uint8_t kFullRefreshEvery = 10;
-
-// Only the eyes and mouth change between faces; the rest of the head is static.
-constexpr int16_t kFaceX = 40;
-constexpr int16_t kFaceY = 64;
-constexpr int16_t kFaceW = 120;
-constexpr int16_t kFaceH = 120;
+// The eyes and the dark sockets around them must share one x.
+constexpr int16_t kEyeLeft = 63;
+constexpr int16_t kEyeRight = 136;
 
 void line2(Adafruit_GFX& g, int16_t x0, int16_t y0, int16_t x1, int16_t y1,
            uint16_t color) {
   g.drawLine(x0, y0, x1, y1, color);
   g.drawLine(x0, y0 + 1, x1, y1 + 1, color);
+}
+
+void fillPolygon(Adafruit_GFX& g, const Point* pts, uint8_t count,
+                 uint16_t color) {
+  forEachPolygonSpan(pts, count, [&](int16_t y, int16_t x0, int16_t x1) {
+    g.drawFastHLine(x0, y, x1 - x0 + 1, color);
+  });
+}
+
+// Half-covered pixels: the panel shows them as grey, which reads as pale fur.
+void fillFur(Adafruit_GFX& g, const Point* pts, uint8_t count, uint16_t color) {
+  forEachPolygonSpan(pts, count, [&](int16_t y, int16_t x0, int16_t x1) {
+    for (int16_t x = x0; x <= x1; ++x) {
+      if (((x + y) & 1) == 0) g.drawPixel(x, y, color);
+    }
+  });
+}
+
+// Right half of a shape, from the hand-drawn left half, keeping the face
+// symmetric; the winding flips but the even-odd fill does not care.
+void mirror(const Point* left, uint8_t count, Point* right) {
+  for (uint8_t i = 0; i < count; ++i) {
+    right[i] = {int16_t(GxEPD2_154_D67::WIDTH - 1 - left[i].x), left[i].y};
+  }
+}
+
+// A circle sampled at two radii and interleaved: loosePercent below 100
+// breaks the outline up like fur, 100 gives a plain ellipse.
+void furRing(Point* out, int16_t cx, int16_t cy, int16_t rx, int16_t ry,
+             uint8_t loosePercent = 100) {
+  Point taut[kMaxPolygonPoints];
+  Point loose[kMaxPolygonPoints];
+  ellipsePoints(cx, cy, rx, ry, taut, kMaxPolygonPoints);
+  ellipsePoints(cx, cy, rx * loosePercent / 100, ry * loosePercent / 100, loose,
+                kMaxPolygonPoints);
+  for (uint8_t i = 0; i < kMaxPolygonPoints; ++i) {
+    out[i] = (i & 1) ? loose[i] : taut[i];
+  }
+}
+
+void drawEar(Adafruit_GFX& g) {
+  Point ear[kMaxPolygonPoints];
+  Point inner[kMaxPolygonPoints];
+  for (const int16_t cx : {26, 174}) {
+    furRing(ear, cx, 50, 21, 20);
+    fillPolygon(g, ear, kMaxPolygonPoints, GxEPD_BLACK);
+    furRing(inner, cx, 52, 11, 10, 88);
+    fillFur(g, inner, kMaxPolygonPoints, GxEPD_WHITE);
+  }
 }
 
 void drawEye(Adafruit_GFX& g, int16_t x, Expression face) {
@@ -197,47 +132,80 @@ void drawMouth(Adafruit_GFX& g, Expression face) {
   }
 }
 
+// The pale markings of a spectacled bear: spectacles, bridge, muzzle.
+void drawMarkings(Adafruit_GFX& g) {
+  Point ring[kMaxPolygonPoints];
+
+  constexpr Point kPlate[] = {{34, 96}, {40, 68},  {58, 54},  {84, 62},
+                              {96, 86}, {88, 110}, {58, 118}, {40, 110}};
+  Point plate[kMaxPolygonPoints];
+  mirror(kPlate, std::size(kPlate), plate);
+  fillPolygon(g, kPlate, std::size(kPlate), GxEPD_WHITE);
+  fillPolygon(g, plate, std::size(kPlate), GxEPD_WHITE);
+
+  constexpr Point kBridge[] = {{84, 82}, {116, 82}, {112, 94}, {88, 94}};
+  fillPolygon(g, kBridge, std::size(kBridge), GxEPD_WHITE);
+
+  // Eye sockets, so the drawn eyes sit in dark skin again.
+  for (const int16_t cx : {kEyeLeft, kEyeRight}) {
+    furRing(ring, cx, 89, 23, 22);
+    fillPolygon(g, ring, kMaxPolygonPoints, GxEPD_BLACK);
+  }
+
+  furRing(ring, 100, 152, 50, 36);
+  fillFur(g, ring, kMaxPolygonPoints, GxEPD_WHITE);
+  furRing(ring, 100, 154, 36, 24);
+  fillPolygon(g, ring, kMaxPolygonPoints, GxEPD_WHITE);
+
+  // Broad nose pad, flat on top and rounded underneath.
+  constexpr Point kNose[] = {{78, 118},  {122, 118}, {126, 127}, {120, 136},
+                             {100, 141}, {80, 136},  {74, 127}};
+  fillPolygon(g, kNose, std::size(kNose), GxEPD_BLACK);
+}
+
 void drawFace(Adafruit_GFX& g, Expression face) {
   g.fillScreen(GxEPD_WHITE);
-  g.fillCircle(38, 40, 30, GxEPD_BLACK);
-  g.fillCircle(162, 40, 30, GxEPD_BLACK);
-  g.fillCircle(100, 108, 84, GxEPD_BLACK);
-  g.fillCircle(100, 150, 40, GxEPD_WHITE);  // muzzle
 
-  for (int16_t x : {64, 136}) {  // spectacles
-    g.fillCircle(x, 88, 26, GxEPD_WHITE);
-    g.fillCircle(x, 88, 21, GxEPD_BLACK);
-  }
-  g.fillRect(88, 85, 24, 6, GxEPD_WHITE);
+  // Crown narrow, cheeks wide, chin blunt: a bear skull, not a circle.
+  constexpr Point kHead[] = {{80, 30},   {120, 30},  {152, 40},  {176, 66},
+                             {186, 100}, {184, 136}, {170, 166}, {142, 186},
+                             {112, 194}, {88, 194},  {58, 186},  {30, 166},
+                             {16, 136},  {14, 100},  {24, 66},   {48, 40}};
+  drawEar(g);
+  fillPolygon(g, kHead, std::size(kHead), GxEPD_BLACK);
 
-  drawEye(g, 64, face);
-  drawEye(g, 136, face);
+  drawMarkings(g);
 
-  g.fillCircle(100, 128, 9, GxEPD_BLACK);
-  g.fillTriangle(93, 128, 107, 128, 100, 140, GxEPD_BLACK);
+  drawEye(g, kEyeLeft, face);
+  drawEye(g, kEyeRight, face);
   drawMouth(g, face);
 }
 
 void displayTask(void*) {
+  // A non-zero baud makes GxEPD2 call Serial.begin() and log busy waits.
   display.init(0);
   display.setRotation(0);
-  uint8_t partials = 0;
-  bool first = true;
+  Expression shown = Expression::Calm;
+  bool haveShown = false;
+  uint32_t lastRefreshMs = 0;
   for (;;) {
     Expression face;
     xQueueReceive(faceQueue, &face, portMAX_DELAY);
     Expression newer;
     while (xQueueReceive(faceQueue, &newer, 0) == pdTRUE) face = newer;
 
-    drawFace(display, face);
-    if (first || partials >= kFullRefreshEvery) {
-      display.display(false);
-      first = false;
-      partials = 0;
-    } else {
-      display.displayWindow(kFaceX, kFaceY, kFaceW, kFaceH);
-      ++partials;
+    const uint32_t waitMs = refreshWaitMs(haveShown, millis(), lastRefreshMs);
+    if (waitMs) {
+      vTaskDelay(pdMS_TO_TICKS(waitMs));
+      while (xQueueReceive(faceQueue, &newer, 0) == pdTRUE) face = newer;
     }
+    if (haveShown && face == shown) continue;
+
+    drawFace(display, face);
+    display.display(false);
+    shown = face;
+    haveShown = true;
+    lastRefreshMs = millis();
   }
 }
 
