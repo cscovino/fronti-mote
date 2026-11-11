@@ -12,31 +12,21 @@ constexpr Expression nextExpression(Expression face, int8_t delta) {
   return static_cast<Expression>(index < 0 ? index + kExpressionCount : index);
 }
 
+// One row per face: note name and pitch (C4, E4, G4, C5).
+struct ExpressionInfo {
+  const char* name;
+  uint16_t hz;
+};
+
+constexpr ExpressionInfo kExpressions[kExpressionCount] = {
+    {"sleepy", 262}, {"calm", 330}, {"happy", 392}, {"surprised", 523}};
+
 inline const char* expressionName(Expression face) {
-  switch (face) {
-    case Expression::Sleepy:
-      return "sleepy";
-    case Expression::Calm:
-      return "calm";
-    case Expression::Happy:
-      return "happy";
-    case Expression::Surprised:
-      return "surprised";
-  }
-  return "calm";
+  const uint8_t i = static_cast<uint8_t>(face);
+  return i < kExpressionCount ? kExpressions[i].name : "calm";
 }
 
-// One note per face: C4, E4, G4, C5.
 inline uint16_t expressionNoteHz(Expression face) {
-  switch (face) {
-    case Expression::Sleepy:
-      return 262;
-    case Expression::Calm:
-      return 330;
-    case Expression::Happy:
-      return 392;
-    case Expression::Surprised:
-      return 523;
-  }
-  return 330;
+  const uint8_t i = static_cast<uint8_t>(face);
+  return i < kExpressionCount ? kExpressions[i].hz : 330;
 }

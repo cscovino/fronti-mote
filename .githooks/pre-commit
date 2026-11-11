@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Format check only for staged C/C++, then the host tests.
+# Format check for staged C/C++; host tests when code or build config moved.
 staged=$(git diff --cached --name-only --diff-filter=ACMR -- \
   '*.c' '*.cc' '*.cpp' '*.cxx' '*.h' '*.hpp')
 if [ -n "$staged" ]; then
@@ -20,4 +20,8 @@ if [ -n "$staged" ]; then
   done <<< "$staged"
 fi
 
-pio test -e native
+# Host tests take ~10 s, so only when code or the build config moved.
+if [ -n "$staged" ] || git diff --cached --name-only --diff-filter=ACMR |
+  grep -qx 'platformio.ini'; then
+  pio test -e native
+fi

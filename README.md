@@ -36,7 +36,7 @@ The firmware gives you:
 - a rotary encoder that changes the expression and plays a note for each detent
   on a passive buzzer,
 - a non-blocking blink of the onboard LED (`GPIO21`, active LOW),
-- a heartbeat + chip/heap report every 2 seconds,
+- a heartbeat every 2 seconds (`status` adds chip, flash and heap),
 - a tiny echoing serial console: type `on`, `off`, `face`, `buzz`, `status`,
   or `help`. The `on`/`off` commands stop the automatic blink and hold the
   requested state; `off` also silences the buzzer.
@@ -47,15 +47,27 @@ The firmware gives you:
 | --- | --- | --- | --- |
 | Sleepy | closed lines | flat line | 262 Hz |
 | Calm | dot pupils | small smile | 330 Hz |
-| Happy | `^ ^` arcs | open smile | 392 Hz |
+| Happy | `^ ^` arcs | open smile, red tongue | 392 Hz |
 | Surprised | big rings | small `o` | 523 Hz |
 
 Turning the encoder wraps through the four faces in both directions. The panel
-refreshes 400 ms after the last detent, so a quick spin produces one update.
+refreshes 400 ms after the last detent, and never twice inside 2 seconds or for
+a face it already shows, so a spin costs one update.
+
+## Drawing the face
+
+Adafruit_GFX, which `GxEPD2_3C` derives from, has no polygon primitive, so
+`include/polygon.h` walks the scanline spans of a simple polygon and
+`src/display.cpp` fills them solid or stippled: the half-covered pixels read as
+the pale fur of a spectacled bear's muzzle and ear insides. `mirror()` copies a
+hand-drawn left half to the right, `furRing()` samples an ellipse at one or two
+radii. The head, ears, spectacles and nose are point tables in `drawFace()`.
 
 ## E-paper display
 
-The panel is a Waveshare 1.54" V2 module (200×200, SSD1681, 3.3 V only).
+The panel is a 1.54" red/black/white three-color e-paper (200×200,
+SSD1683-class, GDEY0154Z90 or equivalent). It is **not** the B/W Waveshare
+1.54" V2: the firmware drives it through `GxEPD2_154_Z90c`.
 
 | E-paper | XIAO pin | GPIO |
 | --- | --- | --- |
@@ -71,10 +83,12 @@ The panel is a Waveshare 1.54" V2 module (200×200, SSD1681, 3.3 V only).
 `D9` is also the SPI MISO pin, but the display only writes, so the BUSY input is
 free to use it.
 
-A full refresh flashes the panel for about 2.6 s. The firmware instead loads
-Waveshare's partial waveform, so a face change takes roughly half a second.
-After ten partial updates it does a full refresh to clear ghosting. The refresh
-runs in a FreeRTOS task, so the encoder and buzzer never wait for the panel.
+A three-color panel has no fast partial waveform — in `GxEPD2` its partial
+update is the same `0xF7` sequence as a full one — so every face change is a
+full refresh: the screen flashes black and white for a few seconds. The only
+way to cut that is to refresh less: `include/refresh_gate.h` holds the minimum
+2 s gap and the skip of an unchanged face. The refresh runs in a FreeRTOS task,
+so the encoder and buzzer never wait for the panel.
 
 ## Encoder and buzzer
 
@@ -95,7 +109,7 @@ the I²C pins, so they are taken if you later add an I²C device.
 ### Breadboard sketch
 
 ```
-XIAO ESP32S3          e-paper 1.54" V2
+XIAO ESP32S3          e-paper 1.54" red/black/white
 3V3  ──────────────── VCC
 GND  ──────────────── GND
 D10  ──────────────── DIN
@@ -137,14 +151,19 @@ the first `pio run`. If they ever go missing:
 - `include/pal.h` — pal hardware API
 - `include/console.h` — serial console API
 - `include/line_reader.h` — pure C++ line parser shared with the host tests
+- `include/polygon.h` — pure C++ polygon scanline fill shared with the tests
+- `include/refresh_gate.h` — pure C++ e-paper refresh pacing, host-testable
 - `include/rotary_encoder.h` — pure C++ quadrature decoder for the host tests
 - `test/test_expressions/` — Unity tests for face wrapping and notes
 - `test/test_line_reader/` — Unity tests for the parser
+- `test/test_polygon/` — Unity tests for the scanline fill
+- `test/test_refresh_gate/` — Unity tests for the refresh gap
 - `test/test_rotary_encoder/` — Unity tests for the encoder decoder
 
 ## Tests
 
-The face order, the serial line parser and the encoder decoder run on the host:
+The face order, the line parser, the polygon fill, the refresh gate and the
+encoder decoder run on the host:
 
 ```bash
 pio test -e native
@@ -156,9 +175,9 @@ during a test run.
 The panel itself has no automated test. After a flash, check:
 
 - boot shows the Calm face and the serial banner,
-- turning the knob updates the eyes and mouth without a full-screen flash,
-- the eleventh face change flashes the whole panel to clear ghosting,
-- the next face change is fast again, so the factory waveform was restored.
+- turning the knob flashes the whole panel and lands on the new face,
+- the face is black and white except the Happy face's red tongue; red that is
+  missing or grey means the colour plane is not being driven.
 
 ## License
 
