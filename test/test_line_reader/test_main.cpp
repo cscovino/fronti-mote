@@ -96,6 +96,25 @@ static void test_backspace_does_not_fix_overflow() {
   expectEvent(LineEvent::TooLong, reader.feed('\n'));
 }
 
+static void test_spaces_around_a_line_are_trimmed() {
+  LineReader reader;
+  reader.feed(' ');
+  reader.feed('f');
+  reader.feed('a');
+  reader.feed('c');
+  reader.feed('e');
+  reader.feed(' ');
+  expectEvent(LineEvent::Line, reader.feed('\n'));
+  TEST_ASSERT_EQUAL_STRING("face", reader.line());
+}
+
+static void test_spaces_only_line_is_not_a_command() {
+  LineReader reader;
+  reader.feed(' ');
+  reader.feed(' ');
+  expectEvent(LineEvent::None, reader.feed('\n'));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_lf_ends_line);
@@ -108,5 +127,7 @@ int main(int, char**) {
   RUN_TEST(test_backspace_removes_last_char);
   RUN_TEST(test_backspace_at_start_is_ignored);
   RUN_TEST(test_backspace_does_not_fix_overflow);
+  RUN_TEST(test_spaces_around_a_line_are_trimmed);
+  RUN_TEST(test_spaces_only_line_is_not_a_command);
   return UNITY_END();
 }
