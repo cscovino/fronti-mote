@@ -18,7 +18,9 @@ scripts/test-hooks.sh  # self-check for .githooks/commit-msg
 ```
 
 Git hooks live in `.githooks/` (format check, commit message, build) and are
-enabled by `pio run`, which sets `core.hooksPath`.
+enabled by `pio run`, which sets `core.hooksPath`. Commit headers are
+`<emoji> type(scope): subject`, at most 72 characters; the emoji and type
+tables live in `.githooks/commit-msg`, examples in `scripts/test-hooks.sh`.
 
 If upload fails: hold BOOT, tap RESET, release BOOT, upload again.
 
