@@ -8,6 +8,21 @@ Your rubber duck upgraded. An open-source desk mate shaped like a Venezuelan spe
 | --- | --- | --- | --- | --- |
 | Seeed Studio XIAO ESP32S3 | ESP32-S3 | 240 MHz | 8 MB (8 MB PSRAM) | 320 KB |
 
+## Parts
+
+Everything the firmware drives; all on the 3V3 rail, no soldering needed.
+
+| Item | Notes |
+| --- | --- |
+| Seeed Studio XIAO ESP32S3 | the only board this firmware targets |
+| 1.54" red/black/white e-paper, 200×200 | GDEY0154Z90-class (SSD1683) — **not** the B/W Waveshare 1.54" V2 |
+| Rotary encoder, EC11 class | A/B quadrature; the push-switch common is unused by firmware |
+| Passive buzzer, 3–5 V | no internal oscillator; the ESP32 generates the tone |
+| Q1: BC547B NPN transistor | low-side switch for the buzzer |
+| D1: 1N4007 diode | flyback across the buzzer, cathode to 3V3 |
+| R1: 1 kΩ resistor | in series with Q1's base |
+| Breadboard, jumpers, USB-C data cable | |
+
 ## Requirements
 
 - **Git**
