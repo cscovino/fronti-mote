@@ -13,11 +13,6 @@
 
 namespace {
 
-constexpr uint8_t kCsPin = D0;    // GPIO1
-constexpr uint8_t kDcPin = D1;    // GPIO2
-constexpr uint8_t kRstPin = D2;   // GPIO3
-constexpr uint8_t kBusyPin = D9;  // GPIO8, SPI MISO is unused
-
 // The bear's panel is a 1.54" red/black/white e-paper (GDEY0154Z90-class,
 // 200x200, SSD1683). It has no fast partial waveform like the B/W V2 did, so
 // every update is the flashing full-refresh waveform: the gap and the skip of
@@ -25,7 +20,7 @@ constexpr uint8_t kBusyPin = D9;  // GPIO8, SPI MISO is unused
 // flashes.
 // shortcut: swap to a B/W panel with fast partial update for snappy faces.
 GxEPD2_3C<GxEPD2_154_Z90c, GxEPD2_154_Z90c::HEIGHT> display(
-    GxEPD2_154_Z90c(kCsPin, kDcPin, kRstPin, kBusyPin));
+    GxEPD2_154_Z90c(kPanelCsPin, kPanelDcPin, kPanelRstPin, kPanelBusyPin));
 
 QueueHandle_t faceQueue = nullptr;
 
