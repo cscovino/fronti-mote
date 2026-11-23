@@ -24,10 +24,7 @@ If upload fails: hold BOOT, tap RESET, release BOOT, upload again.
 
 ## Layout
 
-- `src/main.cpp` — Arduino entry point: blink (`GPIO21`, active LOW),
-  heartbeat, serial console (`on|off|status|help`)
-- `include/line_reader.h` — pure C++ line parser, host-testable
-- `test/test_line_reader/` — Unity tests for `include/` logic
+See README.md §Project layout for the file-by-file map.
 
 ## Coding rules
 
