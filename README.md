@@ -8,6 +8,23 @@ Your rubber duck upgraded. An open-source desk mate shaped like a Venezuelan spe
 | --- | --- | --- | --- | --- |
 | Seeed Studio XIAO ESP32S3 | ESP32-S3 | 240 MHz | 8 MB (8 MB PSRAM) | 320 KB |
 
+## Parts
+
+Everything the firmware drives; all on the 3V3 rail. The XIAO ships
+headerless: solder before wiring anything.
+
+| Item | Notes |
+| --- | --- |
+| Seeed Studio XIAO ESP32S3 | the only board this firmware targets |
+| 1.54" black/white e-paper, 200×200 | GDEH0154D67-class (SSD1681) — e.g. the Waveshare 1.54" V2 |
+| Rotary encoder, EC11 class | A/B quadrature; the push-switch common is unused by firmware |
+| Passive buzzer, 3–5 V | no internal oscillator; the ESP32 generates the tone |
+| Q1: BC547B NPN transistor | low-side switch for the buzzer |
+| D1: 1N4007 diode | flyback across the buzzer, cathode to 3V3 |
+| R1: 1 kΩ resistor | in series with Q1's base |
+| Male pin headers | the XIAO and bare EC11s ship without them |
+| Breadboard, jumpers, USB-C data cable | |
+
 ## Requirements
 
 - **Git**
@@ -65,9 +82,9 @@ radii. The head, ears, spectacles and nose are point tables in `drawFace()`.
 
 ## E-paper display
 
-The panel is a 1.54" black/white e-paper (200×200,
-SSD1681-class, GDEH0154D67 or the equivalent Waveshare
-1.54" V2: the firmware drives it through `GxEPD2_154_D67`.
+The panel is a 1.54" black/white e-paper (200×200, SSD1681-class,
+GDEH0154D67 or the equivalent Waveshare 1.54" V2): the firmware drives it
+through `GxEPD2_154_D67`.
 
 | E-paper | XIAO pin | GPIO |
 | --- | --- | --- |
@@ -85,10 +102,10 @@ free to use it.
 
 The panel can partial-refresh, but a face redraw fills the whole framebuffer,
 so every change is a full refresh: the screen flashes black and white for a
-few seconds. The only way to cut that is to refresh less: `include/
-refresh_gate.h` holds the minimum
-2 s gap and the skip of an unchanged face. The refresh runs in a FreeRTOS task,
-so the encoder and buzzer never wait for the panel.
+few seconds. The only way to cut that is to refresh less:
+`include/refresh_gate.h` holds the minimum 2 s gap and the skip of an
+unchanged face. The refresh runs in a FreeRTOS task, so the encoder and buzzer
+never wait for the panel.
 
 Before shipping or returning the bear, blank the panel to white with the
 one-shot firmware: `pio run -e clean -t upload` (source in
