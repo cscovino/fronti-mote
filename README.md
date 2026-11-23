@@ -4,9 +4,9 @@ Your rubber duck upgraded. An open-source desk mate shaped like a Venezuelan spe
 
 ## Board
 
-| Board | MCU | Frequency | Flash | RAM |
-| --- | --- | --- | --- | --- |
-| Seeed Studio XIAO ESP32S3 | ESP32-S3 | 240 MHz | 8 MB (8 MB PSRAM) | 320 KB |
+| Board | MCU | Frequency | Flash | PSRAM | RAM |
+| --- | --- | --- | --- | --- | --- |
+| Seeed Studio XIAO ESP32S3 | ESP32-S3 | 240 MHz | 8 MB | 8 MB | 320 KB |
 
 ## Parts
 
@@ -50,11 +50,92 @@ The firmware gives you:
 - a 1.54" e-paper bear face with four expressions,
 - a rotary encoder that changes the expression and plays a note for each detent
   on a passive buzzer,
-- a non-blocking blink of the onboard LED (`GPIO21`, active LOW),
-- a heartbeat every 2 seconds (`status` adds chip, flash and heap),
-- a tiny echoing serial console: type `on`, `off`, `face`, `buzz`, `status`,
-  or `help`. The `on`/`off` commands stop the automatic blink and hold the
-  requested state; `off` also silences the buzzer.
+- a Wi-Fi link whose state the onboard LED (`GPIO21`, active LOW) shows and a
+  short tune announces,
+- a heartbeat every 2 seconds (`status` adds chip, flash, heap and Wi-Fi),
+- a tiny echoing serial console: type `face`, `buzz`, `wifi`, `status`, or
+  `help`.
+
+## Wi-Fi
+
+The board joins one network in station mode. Credentials live in
+`include/secrets.h`, which is gitignored:
+
+```bash
+cp include/secrets.example.h include/secrets.h
+$EDITOR include/secrets.h      # kWifiSsid, kWifiPassword (empty = open network)
+```
+
+Without that file the firmware still builds and runs; Wi-Fi stays off and the
+console says so. The hostname is `frontimote-` plus the last six hex digits of
+the MAC, the address comes from DHCP, and modem sleep is disabled so the link
+stays responsive. The station reconnects by itself after a drop; a rejected
+password is retried every 10 seconds. At boot the firmware scans the air once
+(a few seconds inside `setup()`); the console `wifi` command starts the same
+scan in the background, so the pal keeps reacting and the results print a few
+seconds later.
+
+The credentials are compiled into flash as plain text. Use a dedicated network:
+anyone with the board and a USB cable can read the flash and recover them.
+
+The LED is the link indicator:
+
+| Link | LED |
+| --- | --- |
+| connected | solid on |
+| connecting | fast blink (200 ms) |
+| offline, wrong password, or no credentials | slow blink (1 s) |
+
+A rising three-note tune plays when the link comes up, a falling two-note tune
+when a link that was up goes down. A network that never connected stays silent,
+so a wrong password does not chirp on every retry.
+
+## MQTT
+
+The pal subscribes to a broker so an agent or a script can make it react. The
+settings live in the same gitignored `include/secrets.h`:
+
+| Key | Meaning |
+| --- | --- |
+| `kMqttHost` | broker address; empty leaves MQTT off |
+| `kMqttPort` | broker port, `1883` |
+| `kMqttUser`, `kMqttPassword` | optional credentials |
+| `kMqttPrefix` | topic root, `frontimote`; unique per unit on a shared broker |
+
+The client connects once Wi-Fi is online and retries every 5 seconds; a failed
+connect stalls the loop for at most the 3-second socket timeout. Plain TCP
+only, no TLS. Commands are JSON on `<prefix>/cmd`:
+
+```bash
+mosquitto_pub -h broker -t frontimote/cmd -m '{"face":"happy"}'
+mosquitto_pub -h broker -t frontimote/cmd -m '{"face":"next"}'
+mosquitto_pub -h broker -t frontimote/cmd -m '{"beep":440}'
+mosquitto_pub -h broker -t frontimote/cmd -m '{"tune":"up"}'
+mosquitto_pub -h broker -t frontimote/cmd -m '{"status":true}'
+```
+
+- `face` — `sleepy`, `calm`, `happy`, `surprised` or `next`, case-insensitive.
+- `beep` — one 200 ms note, 100 to 5000 Hz; anything outside is ignored.
+- `tune` — `up`, `down`, `happy`, `sad`, `curious` or `sleepy`, case-insensitive.
+  `up` and `down` are the link tunes; the other four are moods.
+- `status` — publish the state now.
+
+Malformed JSON and payloads with no recognized command are logged on the serial
+console and otherwise ignored; payloads over the 512-byte receive buffer are
+dropped without a log. The firmware publishes `<prefix>/state`
+retained, on connect and on every face change, and registers
+`{"online":false}` as its last will:
+
+```json
+{"online":true,"face":"calm","rssi":-52,"heap":123456,"uptime":1234}
+```
+
+Publish commands without `-r`: a retained command would replay on every boot.
+Two units on one broker need two `kMqttPrefix` values; otherwise both obey every
+command and overwrite the same state topic.
+
+Any client that can publish to `<prefix>/cmd` can drive the pet, so give the
+broker an ACL if the network is shared.
 
 ## Expressions
 
@@ -162,29 +243,45 @@ the first `pio run`. If they ever go missing:
 ## Project layout
 
 - `src/main.cpp` — Arduino entry point: `setup()`/`loop()` wiring only
-- `src/pal.cpp` — LED, buzzer, encoder, expression state and settle timer
+- `src/pal.cpp` — LED status, buzzer tunes, encoder, expression state and settle
+  timer
+- `src/wifi_link.cpp` — Wi-Fi join, retries, link status and tunes
+- `src/mqtt_link.cpp` — MQTT client, command payloads and state
 - `src/console.cpp` — serial console and heartbeat
 - `src/display.cpp` — e-paper init, face drawing, background refresh task
 - `include/expressions.h` — face order, names and notes, shared with the tests
 - `include/display.h` — display start and face queue
 - `include/pal.h` — pal hardware API
+- `include/wifi_link.h` — Wi-Fi link API
+- `include/mqtt_link.h` — MQTT link API
+- `include/mqtt_command.h` — pure C++ JSON command parser, host-testable
+- `include/tunes.h` — pure C++ tune table and name lookup, host-testable
 - `include/console.h` — serial console API
+- `include/link_state.h` — pure C++ link debounce and LED pattern, host-testable
+- `include/tune_player.h` — pure C++ note sequencer shared with the tests
+- `include/secrets.example.h` — Wi-Fi and MQTT settings template, copied to the
+  gitignored `include/secrets.h`
 - `include/line_reader.h` — pure C++ line parser shared with the host tests
 - `include/polygon.h` — pure C++ polygon scanline fill shared with the tests
 - `include/refresh_gate.h` — pure C++ e-paper refresh pacing, host-testable
 - `include/rotary_encoder.h` — pure C++ quadrature decoder for the host tests
 - `test/test_expressions/` — Unity tests for face wrapping and notes
 - `test/test_line_reader/` — Unity tests for the parser
+- `test/test_link_state/` — Unity tests for the debounce, retry and LED pattern
 - `test/test_polygon/` — Unity tests for the scanline fill
 - `test/test_refresh_gate/` — Unity tests for the refresh gap
 - `test/test_rotary_encoder/` — Unity tests for the encoder decoder
+- `test/test_mqtt_command/` — Unity tests for the MQTT payload parser
+- `test/test_tunes/` — Unity tests for the tune table and names
+- `test/test_tune_player/` — Unity tests for the note sequencer
 - `tools/clean_display/` — one-shot panel blanker, flashed with
   `pio run -e clean -t upload`
 
 ## Tests
 
-The face order, the line parser, the polygon fill, the refresh gate and the
-encoder decoder run on the host:
+The face order, the line parser, the link state and retry, the polygon fill, the
+refresh gate, the encoder decoder, the tune player, the tune names and the MQTT
+payload parser run on the host:
 
 ```bash
 pio test -e native
