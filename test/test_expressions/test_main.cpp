@@ -37,11 +37,25 @@ static void test_notes_rise_pitch() {
   TEST_ASSERT_EQUAL_UINT16(523, expressionNoteHz(Expression::Surprised));
 }
 
+static void test_expression_from_name() {
+  Expression face = Expression::Surprised;
+  TEST_ASSERT_TRUE(expressionFromName("happy", &face));
+  TEST_ASSERT_EQUAL_INT(asInt(Expression::Happy), asInt(face));
+  TEST_ASSERT_TRUE(expressionFromName("SLEEPY", &face));
+  TEST_ASSERT_EQUAL_INT(asInt(Expression::Sleepy), asInt(face));
+
+  face = Expression::Calm;
+  TEST_ASSERT_FALSE(expressionFromName("next", &face));
+  TEST_ASSERT_FALSE(expressionFromName("", &face));
+  TEST_ASSERT_EQUAL_INT(asInt(Expression::Calm), asInt(face));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_next_wraps_forward);
   RUN_TEST(test_next_wraps_backward);
   RUN_TEST(test_names_are_distinct);
   RUN_TEST(test_notes_rise_pitch);
+  RUN_TEST(test_expression_from_name);
   return UNITY_END();
 }

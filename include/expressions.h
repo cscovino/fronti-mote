@@ -1,5 +1,7 @@
 #pragma once
 
+#include <strings.h>
+
 #include <cstdint>
 
 // The four faces the pal can wear, in knob order.
@@ -18,12 +20,29 @@ struct ExpressionInfo {
   uint16_t hz;
 };
 
-constexpr ExpressionInfo kExpressions[kExpressionCount] = {
+constexpr ExpressionInfo kExpressions[] = {
     {"sleepy", 262}, {"calm", 330}, {"happy", 392}, {"surprised", 523}};
+static_assert(sizeof(kExpressions) / sizeof(kExpressions[0]) ==
+                  kExpressionCount,
+              "kExpressionCount must match kExpressions");
+static_assert(static_cast<uint8_t>(Expression::Surprised) + 1 ==
+                  kExpressionCount,
+              "add the face to the enum, kExpressions and kExpressionCount");
 
 inline const char* expressionName(Expression face) {
   const uint8_t i = static_cast<uint8_t>(face);
   return i < kExpressionCount ? kExpressions[i].name : "calm";
+}
+
+// Case-insensitive lookup of a face by name; leaves *out alone on a miss.
+inline bool expressionFromName(const char* name, Expression* out) {
+  for (uint8_t i = 0; i < kExpressionCount; ++i) {
+    if (strcasecmp(name, kExpressions[i].name) == 0) {
+      *out = static_cast<Expression>(i);
+      return true;
+    }
+  }
+  return false;
 }
 
 inline uint16_t expressionNoteHz(Expression face) {
