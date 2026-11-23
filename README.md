@@ -90,6 +90,10 @@ refresh_gate.h` holds the minimum
 2 s gap and the skip of an unchanged face. The refresh runs in a FreeRTOS task,
 so the encoder and buzzer never wait for the panel.
 
+Before shipping or returning the bear, blank the panel to white with the
+one-shot firmware: `pio run -e clean -t upload` (source in
+`tools/clean_display/`; it draws nothing and hibernates the panel).
+
 ## Encoder and buzzer
 
 | Signal | XIAO pin | Notes |
@@ -159,6 +163,8 @@ the first `pio run`. If they ever go missing:
 - `test/test_polygon/` — Unity tests for the scanline fill
 - `test/test_refresh_gate/` — Unity tests for the refresh gap
 - `test/test_rotary_encoder/` — Unity tests for the encoder decoder
+- `tools/clean_display/` — one-shot panel blanker, flashed with
+  `pio run -e clean -t upload`
 
 ## Tests
 

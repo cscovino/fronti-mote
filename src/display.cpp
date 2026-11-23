@@ -13,18 +13,13 @@
 
 namespace {
 
-constexpr uint8_t kCsPin = D0;    // GPIO1
-constexpr uint8_t kDcPin = D1;    // GPIO2
-constexpr uint8_t kRstPin = D2;   // GPIO3
-constexpr uint8_t kBusyPin = D9;  // GPIO8, SPI MISO is unused
-
 // The bear's panel is a 1.54" black/white e-paper (GDEH0154D67-class,
 // 200x200, SSD1681). A face redraw fills the whole framebuffer anyway, so
 // every update is the flashing full-refresh waveform: the gap and the skip of
 // unchanged faces in refresh_gate.h are the only ways to cut how often it
 // flashes.
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(
-    GxEPD2_154_D67(kCsPin, kDcPin, kRstPin, kBusyPin));
+    GxEPD2_154_D67(kPanelCsPin, kPanelDcPin, kPanelRstPin, kPanelBusyPin));
 
 QueueHandle_t faceQueue = nullptr;
 

@@ -1,9 +1,10 @@
 #include <Arduino.h>
 #include <GxEPD2_BW.h>
 
-GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(D0, D1,
-                                                                         D2,
-                                                                         D9));
+#include "display.h"
+
+GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(
+    GxEPD2_154_D67(kPanelCsPin, kPanelDcPin, kPanelRstPin, kPanelBusyPin));
 
 void setup() {
   display.init(0);
