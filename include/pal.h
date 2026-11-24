@@ -8,6 +8,7 @@
 void palBegin();
 void palTick();
 void palLinkStatus(LinkStatus status);
+void palLinkBand(uint8_t bands);
 void palLinkUp();
 void palLinkDown();
 void palPlayTune(Tune tune);

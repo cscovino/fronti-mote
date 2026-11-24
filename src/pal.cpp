@@ -22,10 +22,6 @@ constexpr uint32_t kFaceSettleMs = 400;
 constexpr uint16_t kTestHz = 440;
 constexpr uint16_t kNoteMs = 200;
 
-bool ledOn = false;
-LinkStatus linkStatus = LinkStatus::Connecting;
-uint32_t linkSinceMs = 0;
-
 const Note* tune = nullptr;
 uint8_t tuneLen = 0;
 uint32_t tuneStartMs = 0;
@@ -36,6 +32,7 @@ RotaryEncoder encoder;
 Expression face = Expression::Calm;
 bool facePending = false;
 uint32_t faceChangeMs = 0;
+uint8_t linkBands = 0;
 
 void playTune(const Note* notes, uint8_t len, uint16_t onMs) {
   tune = notes;
@@ -88,17 +85,11 @@ void palBegin() {
   stopTune();
 
   displayBegin();
-  displayShow(face);
+  displayShow(face, linkBands);
 }
 
 void palTick() {
   const uint32_t now = millis();
-
-  const bool wantLed = ledOnForStatus(linkStatus, now - linkSinceMs);
-  if (wantLed != ledOn) {
-    ledOn = wantLed;
-    digitalWrite(kLedPin, wantLed ? LOW : HIGH);
-  }
 
   if (tune) {
     const uint32_t elapsed = now - tuneStartMs;
@@ -112,16 +103,19 @@ void palTick() {
 
   if (facePending && now - faceChangeMs >= kFaceSettleMs) {
     facePending = false;
-    displayShow(face);
+    displayShow(face, linkBands);
   }
 
   pollEncoder();
 }
 
 void palLinkStatus(LinkStatus status) {
-  if (status == linkStatus) return;
-  linkStatus = status;
-  linkSinceMs = millis();
+  digitalWrite(kLedPin, status == LinkStatus::Online ? LOW : HIGH);
+}
+
+void palLinkBand(uint8_t bands) {
+  linkBands = bands;
+  displayShow(face, linkBands);
 }
 
 void palLinkUp() { palPlayTune(Tune::Up); }

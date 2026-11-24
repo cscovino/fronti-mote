@@ -58,24 +58,25 @@ static void test_retry_survives_a_millis_rollover() {
                                 kWifiRetryIntervalMs));
 }
 
-static void test_online_led_is_solid() {
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Online, 0));
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Online, 123456));
+static void test_coming_online_adopts_the_plain_reading() {
+  TEST_ASSERT_EQUAL_UINT8(4, nextBand(0, -50));
+  TEST_ASSERT_EQUAL_UINT8(3, nextBand(0, -60));
+  TEST_ASSERT_EQUAL_UINT8(1, nextBand(0, -85));
 }
 
-static void test_connecting_blinks_fast() {
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Connecting, 0));
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Connecting, 199));
-  TEST_ASSERT_FALSE(ledOnForStatus(LinkStatus::Connecting, 200));
-  TEST_ASSERT_FALSE(ledOnForStatus(LinkStatus::Connecting, 399));
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Connecting, 400));
+static void test_band_hovers_at_an_edge() {
+  // -64 clears the -65 floor but not the -61 entry gate.
+  TEST_ASSERT_EQUAL_UINT8(2, nextBand(2, -64));
+  TEST_ASSERT_EQUAL_UINT8(3, nextBand(2, -61));
+  // Losing the old floor steps down the same sample.
+  TEST_ASSERT_EQUAL_UINT8(2, nextBand(3, -66));
+  TEST_ASSERT_EQUAL_UINT8(3, nextBand(3, -65));
 }
 
-static void test_offline_blinks_slow() {
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Offline, 0));
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Offline, 999));
-  TEST_ASSERT_FALSE(ledOnForStatus(LinkStatus::Offline, 1000));
-  TEST_ASSERT_TRUE(ledOnForStatus(LinkStatus::Offline, 2000));
+static void test_band_drops_straight_down() {
+  TEST_ASSERT_EQUAL_UINT8(1, nextBand(4, -85));
+  TEST_ASSERT_EQUAL_UINT8(1, nextBand(4, -80));
+  TEST_ASSERT_EQUAL_UINT8(2, nextBand(3, -70));
 }
 
 int main(int, char**) {
@@ -88,8 +89,8 @@ int main(int, char**) {
   RUN_TEST(test_retry_waits_for_the_gap);
   RUN_TEST(test_online_never_retries);
   RUN_TEST(test_retry_survives_a_millis_rollover);
-  RUN_TEST(test_online_led_is_solid);
-  RUN_TEST(test_connecting_blinks_fast);
-  RUN_TEST(test_offline_blinks_slow);
+  RUN_TEST(test_coming_online_adopts_the_plain_reading);
+  RUN_TEST(test_band_hovers_at_an_edge);
+  RUN_TEST(test_band_drops_straight_down);
   return UNITY_END();
 }

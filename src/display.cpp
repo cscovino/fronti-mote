@@ -14,14 +14,27 @@
 namespace {
 
 // The bear's panel is a 1.54" black/white e-paper (GDEH0154D67-class,
-// 200x200, SSD1681). A face redraw fills the whole framebuffer anyway, so
-// every update is the flashing full-refresh waveform: the gap and the skip of
-// unchanged faces in refresh_gate.h are the only ways to cut how often it
-// flashes.
+// 200x200, SSD1681). A face changed needs the full waveform and flashes the
+// screen; the ladder box alone updates with the fast partial waveform the
+// spike (tools/partial_spike) proved usable. refresh_gate.h caps how often
+// either happens.
 GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(
     GxEPD2_154_D67(kPanelCsPin, kPanelDcPin, kPanelRstPin, kPanelBusyPin));
 
-QueueHandle_t faceQueue = nullptr;
+struct PanelRequest {
+  Expression face;
+  uint8_t bands;
+};
+
+QueueHandle_t panelQueue = nullptr;
+
+// Top-right corner, the only region every face picture leaves free.
+// Rotation 0 window updates want x and w as multiples of 8.
+constexpr int16_t kLadderX = 160;
+constexpr int16_t kLadderY = 4;
+constexpr int16_t kLadderW = 40;
+constexpr int16_t kLadderH = 24;
+constexpr uint16_t kPartialsPerFull = 500;
 
 // The eyes and the dark sockets around them must share one x.
 constexpr int16_t kEyeLeft = 63;
@@ -158,7 +171,18 @@ void drawMarkings(Adafruit_GFX& g) {
   fillPolygon(g, kNose, std::size(kNose), GxEPD_BLACK);
 }
 
-void drawFace(Adafruit_GFX& g, Expression face) {
+// Phone-style ladder: band b fills the bars 0..b-1, band 0 the bare box.
+void drawLadder(Adafruit_GFX& g, uint8_t bands) {
+  g.fillRect(kLadderX, kLadderY, kLadderW, kLadderH, GxEPD_WHITE);
+  for (uint8_t b = 0; b < 4; ++b) {
+    if (b >= bands) continue;
+    const int16_t h = 6 * (b + 1);
+    g.fillRect(kLadderX + 1 + b * 10, kLadderY + kLadderH - h, 8, h - 1,
+               GxEPD_BLACK);
+  }
+}
+
+void drawFace(Adafruit_GFX& g, Expression face, uint8_t bands) {
   g.fillScreen(GxEPD_WHITE);
 
   // Crown narrow, cheeks wide, chin blunt: a bear skull, not a circle.
@@ -174,31 +198,47 @@ void drawFace(Adafruit_GFX& g, Expression face) {
   drawEye(g, kEyeLeft, face);
   drawEye(g, kEyeRight, face);
   drawMouth(g, face);
+  drawLadder(g, bands);
 }
 
 void displayTask(void*) {
   // A non-zero baud makes GxEPD2 call Serial.begin() and log busy waits.
   display.init(0);
   display.setRotation(0);
-  Expression shown = Expression::Calm;
+  PanelRequest shown{Expression::Calm, 0};
   bool haveShown = false;
+  uint16_t partialsSinceFull = 0;
   uint32_t lastRefreshMs = 0;
   for (;;) {
-    Expression face;
-    xQueueReceive(faceQueue, &face, portMAX_DELAY);
-    Expression newer;
-    while (xQueueReceive(faceQueue, &newer, 0) == pdTRUE) face = newer;
+    PanelRequest req;
+    xQueueReceive(panelQueue, &req, portMAX_DELAY);
+    PanelRequest newer;
+    while (xQueueReceive(panelQueue, &newer, 0) == pdTRUE) req = newer;
 
     const uint32_t waitMs = refreshWaitMs(haveShown, millis(), lastRefreshMs);
     if (waitMs) {
       vTaskDelay(pdMS_TO_TICKS(waitMs));
-      while (xQueueReceive(faceQueue, &newer, 0) == pdTRUE) face = newer;
+      while (xQueueReceive(panelQueue, &newer, 0) == pdTRUE) req = newer;
     }
-    if (haveShown && face == shown) continue;
+    if (haveShown && req.face == shown.face && req.bands == shown.bands) {
+      continue;
+    }
 
-    drawFace(display, face);
-    display.display(false);
-    shown = face;
+    // A face changed everywhere, so the flashing full waveform; a ladder
+    // alone updates its box silently until the spike-proven ghost budget
+    // of 500 partials is spent.
+    const bool partial = haveShown && req.face == shown.face &&
+                         partialsSinceFull < kPartialsPerFull;
+    if (partial) {
+      drawLadder(display, req.bands);
+      display.displayWindow(kLadderX, kLadderY, kLadderW, kLadderH);
+      ++partialsSinceFull;
+    } else {
+      drawFace(display, req.face, req.bands);
+      display.display(false);
+      partialsSinceFull = 0;
+    }
+    shown = req;
     haveShown = true;
     lastRefreshMs = millis();
   }
@@ -207,8 +247,8 @@ void displayTask(void*) {
 }  // namespace
 
 void displayBegin() {
-  faceQueue = xQueueCreate(1, sizeof(Expression));
-  if (!faceQueue) {
+  panelQueue = xQueueCreate(1, sizeof(PanelRequest));
+  if (!panelQueue) {
     Serial.println("display: queue create failed");
     return;
   }
@@ -218,8 +258,9 @@ void displayBegin() {
   }
 }
 
-void displayShow(Expression face) {
-  if (faceQueue) {
-    xQueueOverwrite(faceQueue, &face);
+void displayShow(Expression face, uint8_t bands) {
+  if (panelQueue) {
+    const PanelRequest req{face, bands};
+    xQueueOverwrite(panelQueue, &req);
   }
 }

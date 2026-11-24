@@ -32,6 +32,22 @@ volatile bool attemptDone = false;
 // A console-initiated async scan is pending; wifiTick() collects it.
 bool scanPending = false;
 
+constexpr uint32_t kBandSampleMs = 15000;
+
+uint8_t linkBand = 0;
+uint32_t lastBandSampleMs = 0;
+
+void reportBand(uint8_t band) {
+  if (band == linkBand) return;
+  linkBand = band;
+  palLinkBand(band);
+}
+
+void sampleBand() {
+  lastBandSampleMs = millis();
+  reportBand(nextBand(linkBand, static_cast<int8_t>(WiFi.RSSI())));
+}
+
 const char* wlName(wl_status_t status) {
   switch (status) {
     case WL_IDLE_STATUS:
@@ -57,6 +73,7 @@ void enter(LinkStatus next, uint32_t now) {
   linkStatus = next;
   linkSinceMs = now;
   palLinkStatus(next);
+  if (next != LinkStatus::Online) reportBand(0);
 }
 
 void printConnected() {
@@ -149,11 +166,17 @@ void wifiTick() {
       everOnline = true;
       attemptDone = false;
       palLinkUp();
+      sampleBand();
       printConnected();
     } else if (next == LinkStatus::Offline) {
       if (everOnline) palLinkDown();
       Serial.printf("wifi   : offline (%s)\n", wlName(WiFi.status()));
     }
+  }
+
+  if (linkStatus == LinkStatus::Online &&
+      now - lastBandSampleMs >= kBandSampleMs) {
+    sampleBand();
   }
 
   if (wifiRetryDue(linkStatus, attemptDone, now, lastRetryMs,

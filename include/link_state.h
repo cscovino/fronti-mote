@@ -25,15 +25,24 @@ inline bool wifiRetryDue(LinkStatus status, bool attemptDone, uint32_t nowMs,
          nowMs - lastMs >= intervalMs;
 }
 
-// Also restarts the blink phase, so a change is visible at once.
-inline bool ledOnForStatus(LinkStatus status, uint32_t msInState) {
-  switch (status) {
-    case LinkStatus::Online:
-      return true;
-    case LinkStatus::Connecting:
-      return (msInState / 200) % 2 == 0;
-    case LinkStatus::Offline:
-      return (msInState / 1000) % 2 == 0;
+// The plain thresholds for bands 1-4, in dBm; band 0 means "no link" and
+// is set by the caller, never computed here.
+constexpr int8_t kBandFloorDbm[4] = {-80, -72, -65, -55};
+
+// A step up needs this much clearance above the new band's threshold;
+// a step down happens the moment the old threshold is lost.
+constexpr int8_t kBandHystDb = 4;
+
+// The RSSI band for a fresh reading. cur 0 (coming online) adopts the
+// plain reading; rising costs the hysteresis, falling is immediate.
+inline uint8_t nextBand(uint8_t cur, int8_t rssiDbm) {
+  uint8_t raw = 1;
+  for (uint8_t b = 4; b >= 2; --b) {
+    if (rssiDbm >= kBandFloorDbm[b - 1]) {
+      raw = b;
+      break;
+    }
   }
-  return false;
+  if (cur == 0 || raw <= cur) return raw;
+  return rssiDbm >= kBandFloorDbm[raw - 1] + kBandHystDb ? raw : cur;
 }
