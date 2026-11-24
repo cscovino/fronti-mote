@@ -52,8 +52,8 @@ The firmware gives you:
 - a 1.54" e-paper bear face with four expressions,
 - a rotary encoder that changes the expression and plays a note for each detent
   on a passive buzzer,
-- a Wi-Fi link whose state the onboard LED (`GPIO21`, active LOW) shows and a
-  short tune announces,
+- a Wi-Fi link shown by the onboard LED (`GPIO21`, active LOW) and a signal
+  ladder on the panel, announced by a short tune,
 - a heartbeat every 2 seconds (`status` adds chip, flash, heap and Wi-Fi),
 - a tiny echoing serial console: type `face`, `buzz`, `wifi`, `status`, or
   `help`.
@@ -80,13 +80,14 @@ seconds later.
 The credentials are compiled into flash as plain text. Use a dedicated network:
 anyone with the board and a USB cable can read the flash and recover them.
 
-The LED is the link indicator:
+The LED is a binary lamp and the e-paper corner carries the graded
+signal (a 4-bar ladder, darker bars = stronger RSSI):
 
-| Link | LED |
-| --- | --- |
-| connected | solid on |
-| connecting | fast blink (200 ms) |
-| offline, wrong password, or no credentials | slow blink (1 s) |
+| Link | LED | Ladder |
+| --- | --- | --- |
+| connected | solid on | 1-4 bars by RSSI |
+| connecting | off | empty |
+| offline, wrong password, or no credentials | off | empty |
 
 A rising three-note tune plays when the link comes up, a falling two-note tune
 when a link that was up goes down. A network that never connected stays silent,
@@ -181,12 +182,15 @@ through `GxEPD2_154_D67`.
 `D9` is also the SPI MISO pin, but the display only writes, so the BUSY input is
 free to use it.
 
-The panel can partial-refresh, but a face redraw fills the whole framebuffer,
-so every change is a full refresh: the screen flashes black and white for a
-few seconds. The only way to cut that is to refresh less:
-`include/refresh_gate.h` holds the minimum 2 s gap and the skip of an
-unchanged face. The refresh runs in a FreeRTOS task, so the encoder and buzzer
-never wait for the panel.
+A face change redraws the whole panel, so it uses the flashing full
+refresh: a few seconds of black and white. The signal ladder in the
+top-right corner instead rides the SSD1681 fast-partial waveform: about
+0.4 s, only its 40×24 px box visibly changes, no screen-wide flash. At
+most 500 ladder updates run without a full refresh, which clears ghosting
+(the margin proven by `tools/partial_spike`). `include/refresh_gate.h`
+still holds the minimum 2 s gap and skips updates where neither face nor
+ladder changed. The refresh runs in a FreeRTOS task, so the encoder and
+buzzer never wait for the panel.
 
 Before shipping or returning the bear, blank the panel to white with the
 one-shot firmware: `pio run -e clean -t upload` (source in
