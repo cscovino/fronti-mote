@@ -45,7 +45,7 @@
       partial, faces full, one full per 500 partials; remove the "the only
       way to cut that is to refresh less" framing. Verify: paragraph
       matches the shipped behaviour line by line.
-- [ ] 5.2 Walk the delta-spec scenarios on the bear: steady signal costs
+- [x] 5.2 Walk the delta-spec scenarios on the bear: steady signal costs
       zero refreshes; carry the bear across the room and the ladder steps
       without flashing; pull power from the AP and see LED off + empty box
       within the gap; plug in and see tune + solid LED + right band.
