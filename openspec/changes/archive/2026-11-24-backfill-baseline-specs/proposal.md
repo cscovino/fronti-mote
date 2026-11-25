@@ -43,6 +43,3 @@ baseline specs — a documentation-only backfill, no code changes.
 - Only `openspec/` artifacts; `src/`, `include/` and `test/` are untouched.
 - Specs become the reference contract for future change proposals; README stays
   the human-facing guide.
-- `wifi-link` and `mqtt-commands` describe the Wi-Fi branch, whose code is not on
-  `main`; their deltas are held back from this baseline and land with that
-  feature branch.

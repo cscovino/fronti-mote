@@ -4,7 +4,9 @@
 
 #include "expressions.h"
 #include "line_reader.h"
+#include "mqtt_link.h"
 #include "pal.h"
+#include "wifi_link.h"
 
 namespace {
 
@@ -15,11 +17,11 @@ uint32_t lastStatusMs = 0;
 
 void printHelp() {
   Serial.println("Commands:");
-  Serial.println("  on       - turn the onboard LED on (stops blinking)");
-  Serial.println("  off      - turn the LED off and silence the buzzer");
   Serial.println("  face     - cycle to the next expression");
   Serial.println("  buzz     - play a 440 Hz test tone");
-  Serial.println("  status   - print chip/heap/expression information");
+  Serial.println(
+      "  wifi     - print the link state; scan results follow in seconds");
+  Serial.println("  status   - print chip/heap/expression/wifi information");
   Serial.println("  help     - this text");
 }
 
@@ -36,21 +38,18 @@ void printStatus() {
   }
   Serial.printf("face   : %s (%u Hz)\n", expressionName(face),
                 (unsigned)expressionNoteHz(face));
+  wifiPrintStatus();
+  mqttPrintStatus();
 }
 
 void handleCommand(const char* cmd) {
-  if (strcmp(cmd, "on") == 0) {
-    palLed(true);
-    Serial.println("LED on");
-  } else if (strcmp(cmd, "off") == 0) {
-    palLed(false);
-    palSilence();
-    Serial.println("LED off");
-  } else if (strcmp(cmd, "face") == 0) {
+  if (strcmp(cmd, "face") == 0) {
     palCycleFace();
   } else if (strcmp(cmd, "buzz") == 0) {
     palBeep();
     Serial.println("buzz 440 Hz");
+  } else if (strcmp(cmd, "wifi") == 0) {
+    wifiScan();
   } else if (strcmp(cmd, "status") == 0) {
     printStatus();
   } else if (strcmp(cmd, "help") == 0) {
