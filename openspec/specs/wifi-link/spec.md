@@ -2,7 +2,8 @@
 
 ## Purpose
 
-Joining, keeping and signalling the Wi-Fi station link via LED, tunes and scan.
+Joining, keeping and signalling the Wi-Fi station link via a binary lamp,
+RSSI signal bands, tunes and scan.
 
 ## Requirements
 
@@ -28,16 +29,41 @@ A link that drops SHALL reconnect by itself. A rejected password SHALL be retrie
 - **THEN** each attempt is at least 10 s after the previous one
 
 ### Requirement: LED link indicator
-The onboard LED (active LOW) SHALL show the link state: solid on when online, fast blink (200 ms) while connecting, slow blink (1 s) when offline, wrong-password or unconfigured.
+The onboard LED (active LOW) SHALL be a binary lamp: solid on only while
+online, off in every other state; the signal ladder on the panel carries
+the graded link picture.
 
 #### Scenario: Online
 - **WHEN** the link is online
 - **THEN** the LED is solid on
 
 #### Scenario: Offline
-- **GIVEN** the link was never up
+- **GIVEN** the link is connecting, offline, rejected or unconfigured
 - **WHEN** the pal is running
-- **THEN** the LED slow-blinks at 1 s
+- **THEN** the LED is off
+
+### Requirement: RSSI signal bands
+While online the pal SHALL map link RSSI to bands 1-4 at -55/-65/-72/-80
+dBm thresholds, resampled about every 15 s, with about 4 dB hysteresis so
+a reading near a threshold does not ping-pong; no link SHALL be band 0.
+Band and link changes SHALL be reported to the panel's signal ladder.
+
+#### Scenario: Steady signal
+- **GIVEN** the link is online
+- **WHEN** RSSI stays inside one band for minutes
+- **THEN** the band never changes and the ladder never updates
+
+#### Scenario: Threshold hover
+- **WHEN** RSSI fluctuates within 4 dB of a band edge
+- **THEN** the band stays on its side of the edge
+
+#### Scenario: Link drops
+- **WHEN** the link leaves online
+- **THEN** the band is 0 at once, without waiting for a sample
+
+#### Scenario: Link comes up
+- **WHEN** the link goes online
+- **THEN** the band is read immediately, not one sample period later
 
 ### Requirement: Network scan
 At boot the firmware SHALL scan once (blocking a few seconds inside setup), and the console `wifi` command SHALL start the same scan in the background and print the results a few seconds later without freezing the pal.
